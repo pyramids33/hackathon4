@@ -10,7 +10,7 @@ function HeadersDb (filename) {
         return db.transaction(fn)();
     }
 
-    db.prepare('create table if not exists headers (hash text, height int, version int, prevblock text, merkleroot text, time int, bits int, nonce int)').run();
+    db.prepare('create table if not exists headers (hash blob, height int, version int, prevblock blob, merkleroot blob, time int, bits int, nonce int)').run();
     db.prepare('create unique index if not exists headers_hash on headers(hash)').run();
     db.prepare('create index if not exists headers_height on headers(height)').run();
 
@@ -41,7 +41,7 @@ function HeadersDb (filename) {
     function resolveOrphans (height, rows) {
         // we have more than one header row at this height.
         // check the next few blocks to eliminate the orphaned chains
-        // return the row at current height that is linked by prevblock
+        // return the row at height that is linked by prevblock
         // should rarely be more than 1-2 iterations in practice
         let nextRows = getByHeight(height + 1);
         let nextRow = nextRows.length > 1 ? resolveOrphans(db, height + 1, nextRows) : nextRows[0];

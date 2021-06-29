@@ -9,7 +9,7 @@ const Inbox = require('./inbox.js');
 const protocolVersion = 70015;
 const servicesFlags = 0;
 
-let dbfilename = 'testnet_p2p.db';
+let dbfilename = './data/testnet_p2p.db';
 
 // testnet
 let netMagicHex = 'f4e5f3f4';
@@ -27,7 +27,7 @@ if (fs.existsSync(dbfilename) && resetdb) {
     }
 }
 
-let db = HeadersDb('testnet_p2p.db');
+let db = HeadersDb(dbfilename);
 
 let genesisHeaderRow = db.getByHeight(0);
 
