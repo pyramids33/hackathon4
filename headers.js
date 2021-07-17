@@ -1,18 +1,15 @@
-const sqlite3 = require('better-sqlite3');
 
-function HeadersDb (filename) {
+function blockHeaderFromDbRow(row) {
+    return new bsv.BlockHeader(
+        row.version, 
+        Buffer.from(row.prevblock),
+        Buffer.from(row.merkleroot),
+        row.time, 
+        row.bits, 
+        row.nonce);
+}
 
-    let db = new sqlite3(filename);
-    db.pragma('journal_mode = WAL');
-    process.on('exit', function () { db.close(); });
-
-    function transaction (fn) {
-        return db.transaction(fn)();
-    }
-
-    db.prepare('create table if not exists headers (hash blob, height int, version int, prevblock blob, merkleroot blob, time int, bits int, nonce int)').run();
-    db.prepare('create unique index if not exists headers_hash on headers(hash)').run();
-    db.prepare('create index if not exists headers_height on headers(height)').run();
+function HeadersDb (db) {
 
     const psAddHeader = db.prepare(`insert into headers (hash, height, version, prevblock, merkleroot, time, bits, nonce) values (?,?,?,?,?,?,?,?)`);
     
@@ -86,8 +83,7 @@ function HeadersDb (filename) {
     }
 
     return {
-        db,
-        transaction,
+        ps: { psAddHeader, psGetByHash, psGetByHeight, psGetChainTips },
         addHeader,
         getByHash,
         getChainTips,
@@ -97,4 +93,13 @@ function HeadersDb (filename) {
     }
 }
 
-module.exports = HeadersDb
+function updateSchema (db) {
+    db.prepare('create table if not exists headers (hash blob, height int, version int, prevblock blob, merkleroot blob, time int, bits int, nonce int)').run();
+    db.prepare('create unique index if not exists headers_hash on headers(hash)').run();
+    db.prepare('create index if not exists headers_height on headers(height)').run();
+}
+
+module.exports = {
+    updateSchema,
+    api: HeadersDb
+}
