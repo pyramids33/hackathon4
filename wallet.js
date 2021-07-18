@@ -1,4 +1,5 @@
 const sqlite3 = require('better-sqlite3');
+const bsv = require('bsv');
 
 const Headers = require('./headers.js');
 const HDKeys = require('./hdkeys.js');
@@ -6,12 +7,49 @@ const TxOutputs = require('./txoutputs.js');
 const Transactions = require('./transactions.js');
 const WalletMeta = require('./walletmeta.js');
 const P2PKH = require('./p2pkh.js');
+const Scripts = require('./scripts.js');
 
 const SyncHeaders = require('./p2pnetwork.js');
 const { OpenSqliteFile, Transactor } = require('./dbutil.js');
 const Networks = require('./networks.js');
 
+function TxHandler (scriptsDb, txOutputsDb) {
+    return function handleTx (txhash, tx) {
+        let report = [];
+        
+        tx.txIns.forEach(function (input, index) {
+            let txOutput = txOutputsDb.getTxOutput(input.txHashBuf, input.txOutNum);
+            
+            if (txOutput) {
+                txOutputsDb.spendTxOutput(input.txHashBuf, input.txOutNum, tx.hash(), index);
+                report.push([ 'input', index, txOutput.type, txOutput.amount ]);
+            }
+        });
+
+        tx.txOuts.forEach(function (output, index) {
+            let scriptHash = bsv.Hash.sha256(output.script.toBuffer());
+            let scriptInfo = scriptsDb.getScriptByHash(scriptHash);
+
+            if (scriptInfo) {
+                txOutputsDb.addTxOutput(txhash, index, output.valueBn.toNumber(), scriptInfo.type, scriptInfo.initialstatus);
+                report.push([ 'output', index, scriptInfo.type, output.valueBn, scriptInfo.initialstatus]);
+            }
+        });
+
+        return report;
+    }
+}
+
 class BaseWallet {
+
+    static updateSchema (db) {
+        Headers.updateSchema(db);
+        TxOutputs.updateSchema(db);
+        HDKeys.updateSchema(db);
+        Transactions.updateSchema(db);
+        WalletMeta.updateSchema(db);
+        Scripts.updateSchema(db);
+    }
 
     static initDb (networkName, currentTime) {        
         
@@ -23,12 +61,7 @@ class BaseWallet {
 
         const db = new sqlite3(':memory:');
 
-        Headers.updateSchema(db);
-        TxOutputs.updateSchema(db);
-        HDKeys.updateSchema(db);
-        Transactions.updateSchema(db);
-        WalletMeta.updateSchema(db);
-        P2PKH.updateSchema(db);
+        this.updateSchema(db);
         
         let wm = WalletMeta.api(db);
         wm.setValue('created', currentTime);
@@ -58,13 +91,13 @@ class BaseWallet {
         let network = this.getNetwork();
 
         this.headers = Headers.api(db);
-        this.hdkeys = HDKeys.api(db, network);
+        this.hdkeys = HDKeys.api(db);
         this.txoutputs = TxOutputs.api(db);
         this.transactions = Transactions.api(db);
+        this.scripts = Scripts.api(db);
         
-        this.p2pkh = P2PKH.api(db, network, this.hdkeys);
-        this.#txHandlers.push(this.p2pkh.handleTx);
-        this.#spendHandlers[P2PKH.TXO_TYPE] = this.p2pkh.handleSpend;
+        this.#txHandlers.push(TxHandler(this.scripts, this.txoutputs, network));
+        this.#spendHandlers[P2PKH.TXO_TYPE] = P2PKH.SpendHandler(this.scripts, this.hdkeys, network);
     }
 
     getNetwork () {
@@ -72,11 +105,26 @@ class BaseWallet {
         return Networks[networkName];
     }
 
-    addTransaction (tx) {
-        this.db.transaction(() => {
-            this.#txHandlers.forEach(fn => fn(this, tx));
-            this.transactions.addTransaction(tx.hash(), 'processed', tx.toBuffer());
-        });
+    addTransaction (tx, commit) {
+        let txhash = tx.hash();
+        let reports;
+        
+        try {
+            this.dbTransaction(() => {
+                reports = this.#txHandlers.map(fn => fn(txhash, tx));
+                this.transactions.addTransaction(tx.hash(), 'processed', tx.toBuffer());
+                
+                if (!commit) {
+                    throw new Error('rollback intentionally');
+                }
+            });
+        } catch (err) {
+            if (err.message !== 'rollback intentionally') {
+                throw err;
+            }
+        }
+
+        return reports;
     }
 
     getSpendInfo (txhash, index, output) {
@@ -95,11 +143,15 @@ class BaseWallet {
         return handler(txhash, index, output);
     }
 
-    syncHeaders (host, port, onReport) {
+    syncHeaders (host, onReport) {
         let network = this.getNetwork();
-        let netMagicHex = network.networkMagicHex;
-        let headersDb = wallet.headers;
-        SyncHeaders(host, port, netMagicHex, headersDb, onReport);
+        SyncHeaders(
+            host, 
+            network.constants.Port,
+            network.constants.Msg.versionBytesNum, 
+            network.constants.Msg.magicNum,
+            this.headers, 
+            onReport);
     }
 }
 

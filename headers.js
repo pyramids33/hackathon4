@@ -1,3 +1,4 @@
+const { Transactor } = require("./dbutil");
 
 function blockHeaderFromDbRow(row) {
     return new bsv.BlockHeader(
@@ -41,7 +42,7 @@ function HeadersDb (db) {
         // return the row at height that is linked by prevblock
         // should rarely be more than 1-2 iterations in practice
         let nextRows = getByHeight(height + 1);
-        let nextRow = nextRows.length > 1 ? resolveOrphans(db, height + 1, nextRows) : nextRows[0];
+        let nextRow = nextRows.length > 1 ? resolveOrphans(height + 1, nextRows) : nextRows[0];
         return nextRow ? rows.find((item) => item.hash === nextRow.prevblock) : undefined;
     }
 
@@ -89,7 +90,8 @@ function HeadersDb (db) {
         getChainTips,
         getByHeight,
         resolveOrphans,
-        getBlockLocatorRows
+        getBlockLocatorRows,
+        transaction: Transactor(db)
     }
 }
 

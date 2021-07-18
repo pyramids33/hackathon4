@@ -1,4 +1,8 @@
+const net = require('net');
+const crypto = require('crypto');
+const bsv = require('bsv');
 
+const Inbox = require('./inbox.js');
 
 function writeAddr (bw, addr) {
     if (addr === undefined) {
@@ -15,7 +19,7 @@ function writeAddr (bw, addr) {
     bw.writeUInt16BE(addr.port);
 }
 
-function createVersionMessageBuffer (height, addrRecv, addrFrom) {
+function createVersionMessageBuffer (protocolVersion, servicesFlags, height, addrRecv, addrFrom) {
 
     let bw = new bsv.Bw();
     bw.writeUInt32LE(protocolVersion);
@@ -36,7 +40,7 @@ function createVersionMessageBuffer (height, addrRecv, addrFrom) {
     return bw.toBuffer();
 }
 
-function createGetHeadersMessageBuffer (blockLocatorRows) {
+function createGetHeadersMessageBuffer (protocolVersion, blockLocatorRows) {
 
     let bw = new bsv.Bw();
     bw.writeUInt32LE(protocolVersion);
@@ -62,14 +66,16 @@ function createMessageBuf (netMagicHex, command, payload) {
     return bw.toBuffer();
 }
 
-function SyncHeaders (host, port, netMagicHex, headersDb, onReport) {
+function SyncHeaders (host, port, protocolVersion, netMagic, headersDb, onReport) {
 
+    let servicesFlags = 0;
+    let netMagicHex = netMagic.toString(16);
     let inbox = Inbox({ netMagicHex });
     let socket = new net.Socket();
 
     function sendGetHeaders() {
         let blockLocatorRows = headersDb.getBlockLocatorRows(headersDb.getChainTips()[0]);
-        let message = createMessageBuf(netMagicHex, 'getheaders', createGetHeadersMessageBuffer(blockLocatorRows));
+        let message = createMessageBuf(netMagicHex, 'getheaders', createGetHeadersMessageBuffer(protocolVersion, blockLocatorRows));
         socket.write(message);
     }
 
@@ -148,8 +154,8 @@ function SyncHeaders (host, port, netMagicHex, headersDb, onReport) {
 
     socket.on('connect', function() {
         let height = headersDb.getChainTips()[0].height;
-        let payload = createVersionMessageBuffer(height);
-        let message = createMessageBuf('version', payload);
+        let payload = createVersionMessageBuffer(protocolVersion, servicesFlags, height);
+        let message = createMessageBuf(netMagicHex, 'version', payload);
         socket.write(message);
     });
 

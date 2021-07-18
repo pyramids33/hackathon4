@@ -14,13 +14,14 @@ function TxOutputsDb (db) {
     /*
     status
     0 = spent
-    1 = reserved
-    2 = spendable
+    1 = spendable
+    2 = reserved
+    3 = notspendable
     */
 
     db.prepare(`
         create temp view if not exists txoutputs_unspent (txhash, txoutnum, amount, type) as 
-        select txhash,txoutnum,amount,type from txoutputs where status = 0`
+        select txhash,txoutnum,amount,type from txoutputs where status = 1`
     ).run();
 
     const psAddTxOutput = db.prepare('insert into txoutputs (txhash, txoutnum, amount, type, status) values (?,?,?,?,?)');
@@ -29,10 +30,10 @@ function TxOutputsDb (db) {
         return psAddTxOutput.run(txhash, txoutnum, amount, type, status);
     }
 
-    const psSpendTxOutput = db.prepare('update txoutputs set status = 2, spenttxhash = ?, spenttxoutnum = ? where txhash = ? and txoutnum = ?');
+    const psSpendTxOutput = db.prepare('update txoutputs set status = 0, spenttxhash = ?, spenttxoutnum = ? where txhash = ? and txoutnum = ?');
     
-    function spendTxOutput (txhash, txoutnum, spenttxhash, spenttxoutnum) {
-        return psSpendTxOutput.run(spenttxhash, spenttxoutnum, txhash, txoutnum);
+    function spendTxOutput (txhash, txoutnum, spenttxhash, spenttxinnum) {
+        return psSpendTxOutput.run(spenttxhash, spenttxinnum, txhash, txoutnum);
     }
 
     const psGetTxOutput = db.prepare('select * from txoutputs where txhash = ? and txoutnum = ?');

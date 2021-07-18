@@ -16,12 +16,3 @@ wallet.hdkeys.addHDKey('test', hdkey.toBuffer());
 
 let script = wallet.receiveP2PKH('test');
 console.log(script.toString());
-
-let chainTip = wallet.headers.getChainTips()[0];
-console.log('chaintip', chainTip.height, chainTip.hash);
-
-wallet.syncHeaders(function (report) {
-    let chainTip = wallet.headers.getChainTips()[0];
-    console.log('received', report.headerCount, 'headers, processed in', (report.processingTime/1000).toFixed(2), 'seconds');
-    console.log('chaintip', chainTip.height, chainTip.hash);
-});
