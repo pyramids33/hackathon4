@@ -101,6 +101,8 @@ function updateSchema (db) {
     db.prepare('create index if not exists headers_height on headers(height)').run();
 }
 
+
+
 module.exports = {
     updateSchema,
     api: HeadersDb

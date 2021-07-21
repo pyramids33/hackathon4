@@ -11,7 +11,7 @@ module.exports = {
             bits: 0x1d00ffff,
         },
         peers: [
-            { host: '70.114.25.192', port: 18333 }
+            '70.114.25.192'
         ],
         constants: bsv.Constants.Testnet,
         Bip32: bsv.Bip32.Testnet,
@@ -28,7 +28,9 @@ module.exports = {
             nonce: 2083236893,
             bits: 0x1d00ffff
         },
-        peers: [],
+        peers: [
+            '159.65.152.200'
+        ],
         constants: bsv.Constants.Mainnet,
         Bip32: bsv.Bip32.Mainnet,
         Address: bsv.Address.Mainnet,

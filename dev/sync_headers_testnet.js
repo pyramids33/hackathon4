@@ -4,7 +4,7 @@ const { BaseWallet } = require('../wallet.js');
 const { OpenSqliteFile } = require('../dbutil.js');
 
 let testnethost = '70.114.25.192';
-let dbfilename = './data/sync_headers_testnet.db';
+let dbfilename = './data/headers-testnet.db';
 
 let resetdb = process.argv.length > 2 && process.argv[2] === '1';
 

@@ -1,4 +1,5 @@
 const bsv = require('bsv');
+const fs = require('fs');
 
 const { makeProgram, BaseWallet, getWallet, initWallet } = require('../wallet.js');
 const P2PKH = require('../p2pkh.js');
@@ -13,6 +14,8 @@ let txBuf = Buffer.from('0100000001b22e80d2350b900f3070bd24adfcca0cdbdd535e613e7
                      +'ffff02e8030000000000001976a914788eea766a8c36bcfbdb331eb8bd02bec5954aec88acdfbe0000000000001976a91474'
                      +'6a05aae81cf30091cb6d821b0dbf83005d334e88ac00000000','hex');
 
+fs.writeFileSync('./data/tx1.bin', txBuf)
+
 let hdkey = network.Bip32.fromString('xprv9s21ZrQH143K4ZusTkLzYGA5XbJWf27w1awLgPPHj1FZvBDPGQyiSFQd7VjEEhweEVcQDMpUiVmMWPRBkpNjVdu92oD3kA4GUBuy9gdmhmq');
 wallet.hdkeys.addHDKey('test', hdkey.toBuffer());
 
@@ -26,7 +29,6 @@ let tx = bsv.Tx.fromBuffer(txBuf);
 let report = wallet.addTransaction(tx, false);
 
 console.log(report);
-
 
 let unlockScript = P2PKH.spend(wallet.scripts, wallet.hdkeys, tx.txOuts[0], wallet.getNetwork());
 

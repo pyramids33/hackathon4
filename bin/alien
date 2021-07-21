@@ -1,0 +1,8 @@
+#!/usr/bin/env node
+const { makeProgram, getWallet, initWallet } = require('../program.js');
+const program = makeProgram(initWallet, getWallet);
+program.parseAsync(process.argv)
+    .catch(function (error) {
+        console.log(error);
+    });
+    

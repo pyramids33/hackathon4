@@ -4,6 +4,11 @@ const { Transactor } = require('./dbutil.js');
 
 const DEFAULT_KEY_NAME = 'default';
 
+function updateSchema (db) {
+    db.prepare('create table if not exists hdkeys (name text primary key, xprv blob, derivationpath text, counter int)').run();
+    db.prepare('create unique index if not exists hdkeys_xprv_derivationpath on hdkeys(xprv,derivationpath)').run();
+}
+
 function HDKeysDb (db) {
 
     const transaction = Transactor(db);
@@ -16,6 +21,12 @@ function HDKeysDb (db) {
         } else {
             return psHDKeyByName.get(name);
         }   
+    }
+
+    const psAllHDKeys = db.prepare('select * from hdkeys order by name');
+    
+    function allHDKeys () {
+        return psAllHDKeys.all();
     }
     
     const psAddHDKey = db.prepare('insert into hdkeys (name,xprv,derivationpath,counter) values (?,?,?,?);');
@@ -39,13 +50,9 @@ function HDKeysDb (db) {
         updateSchema,
         getHDKey,
         addHDKey,
-        nextIndex
+        nextIndex,
+        allHDKeys
     }
-}
-
-function updateSchema (db) {
-    db.prepare('create table if not exists hdkeys (name text primary key, xprv blob, derivationpath text, counter int)').run();
-    db.prepare('create unique index if not exists hdkeys_xprv_derivationpath on hdkeys(xprv,derivationpath)').run();
 }
 
 function initData (db, network) {
