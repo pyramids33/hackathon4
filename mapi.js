@@ -1,43 +1,48 @@
 
 
 function updateSchema (db) {
-    db.prepare('create table if not exists mapi_minerid (name text primary key, pubkey blob, endpoint text)').run();
-    db.prepare('create table if not exists mapi_feequote (miner text, expiry int, payload text)').run();
+    db.prepare('create table if not exists mapi_miners (name text primary key, pubkey blob, endpoint text, feeexpiry int, feequote text)').run();
 }
 
 function MapiDb (db) {
 
-    const psAddMinerId = db.prepare('insert into mapi_minerid (name,pubkey,endpoint) values (?,?,?)');
+    const psAddMiner = db.prepare('insert into mapi_miners (name,pubkey,endpoint) values (?,?,?)');
     
-    function addMinerId (name, pubkey, endpoint) {
-        return psAddMinerId.run(name, pubkey, endpoint);
+    function addMiner (name, pubkey, endpoint) {
+        return psAddMiner.run(name, pubkey, endpoint);
     }
 
-    const psGetMinerIdByName = db.prepare('select * from mapi_minerid where name = ?');
+    const psGetMinerByName = db.prepare('select * from mapi_miners where name = ?');
     
-    function getMinerIdByName (name) {
-        return psGetMinerIdByName.get(name);
+    function getMinerByName (name) {
+        return psGetMinerByName.get(name);
     }
 
-    const psAllMinerIds = db.prepare('select * from mapi_minerid order by name');
+    const psAllMiners = db.prepare('select * from mapi_miners order by name');
 
-    function allMinerIds () {
-        return psAllMinerIds.all();
+    function allMiners () {
+        return psAllMiners.all();
     }
 
-    const psAddFeeQuote = db.prepare('insert into mapi_feequote (miner,expiry,payload) values (?,?,?)');
+    const psSetFeeQuote = db.prepare('update mapi_miners set feeexpiry = ?, feequote = ? where name = ?');
+
+    function setFeeQuote (name, expiry, payload) {
+        return psSetFeeQuote.run(expiry, payload, name);
+    }
+
+    const psValidFeeQuotes = db.prepare('select * from mapi_miners where feeexpiry > ?');
     
-    function addFeeQuote (miner, expiry, payload) {
-        return psAddFeeQuote.run(miner, expiry, payload);
+    function validFeeQuotes (currentTime) {
+        return psValidFeeQuotes.all(currentTime);
     }
     
     return {
-        ps: { psAddMinerId, psAddFeeQuote },
-        updateSchema,
-        addMinerId,
-        getMinerIdByName,
-        allMinerIds,
-        addFeeQuote
+        ps: { psAddMiner, psGetMinerByName, psAllMiners, psSetFeeQuote, psValidFeeQuotes },
+        addMiner,
+        getMinerByName,
+        allMiners,
+        setFeeQuote,
+        validFeeQuotes
     }
 }
 

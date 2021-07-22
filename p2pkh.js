@@ -1,5 +1,4 @@
 const bsv = require('bsv');
-const OpCode = bsv.OpCode;
 
 const TXO_TYPE = 'p2pkh';
 

@@ -357,7 +357,7 @@ function makeProgram (initWallet, getWallet) {
         .action (async (name, pubkey, endpoint, options, command) => {
             let db = OpenSqliteFile(command.parent.opts().dbfile);
             let wallet = getWallet(db);
-            wallet.mapi.addMinerId(name, pubkey, endpoint);
+            wallet.mapi.addMiner(name, pubkey, endpoint);
         });
 
     program.command('show-mapi')
@@ -365,18 +365,52 @@ function makeProgram (initWallet, getWallet) {
         .action (async (options, command) => {
             let db = OpenSqliteFile(command.parent.opts().dbfile);
             let wallet = getWallet(db);
-            console.table(wallet.mapi.allMinerIds());
+
+            let miners = wallet.mapi.allMiners();
+
+            let dataOut = miners.map(function (item) {
+                let retObj = { 
+                    name: item.name,
+                    endpoint: item.endpoint,
+                    expires: undefined,
+                    standard: undefined,
+                    data: undefined
+                };
+
+                if (item.feequote && item.feeexpiry > Date.now()) {
+                    
+                    retObj.expires = ((item.feeexpiry-Date.now())/1000/60).toFixed(0) + ' hrs';
+
+                    let quoteObj = JSON.parse(item.feequote);
+                    
+                    quoteObj.fees.forEach(function (x) {
+                        if (x.feeType === 'standard' || x.feeType === 'data') {
+                            retObj[x.feeType] = Math.ceil(x.miningFee.satoshis/(x.miningFee.bytes/1000));
+                        }
+                    });  
+                }
+
+                return retObj;
+            });
+
+            console.table(dataOut);
         });
 
     program.command('get-fee-quote <miner>')
         .description('get fee quote from mapi')
+        .option('-o --overwrite', 'let the current fee quote be overwritten if it has not expired.')
         .action (async (minerName, options, command) => {
             let db = OpenSqliteFile(command.parent.opts().dbfile);
             let wallet = getWallet(db);
-            let minerInfo = wallet.mapi.getMinerIdByName(minerName);
+            let minerInfo = wallet.mapi.getMinerByName(minerName);
             
             if (minerInfo === undefined) {
                 console.error('Unknown miner');
+                process.exit(1);
+            }
+
+            if (minerInfo.feeexpiry > Date.now() && !options.overwrite) {
+                console.error('Valid fee quote exists, use -o flag to overwrite.');
                 process.exit(1);
             }
 
@@ -394,7 +428,7 @@ function makeProgram (initWallet, getWallet) {
                     if (sigVerified) {
                         let payloadObj = JSON.parse(response.data.payload);
                         let expiry = new Date(payloadObj.expiryTime).valueOf();
-                        wallet.mapi.addFeeQuote(minerInfo.name, expiry, response.data.payload);
+                        wallet.mapi.setFeeQuote(minerInfo.name, expiry, response.data.payload);
                         console.log(response.data.payload.fees);
                     }
                 }

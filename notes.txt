@@ -69,3 +69,9 @@ implement the stdin/stdout to read in a tx eg:
 
 transactions
 pruning - if all the utxos are spent, you could prune the transaction
+
+
+channels 
+requests publicwrite/privateread { tx1, response_channel, response_channel_token }
+response privateread/privatewrite { tx3 }
+publish  publicread/privatewrite { tx3 }

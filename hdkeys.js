@@ -47,7 +47,6 @@ function HDKeysDb (db) {
 
     return {
         ps: { psHDKeyByName, psAddHDKey, psNextIndex },
-        updateSchema,
         getHDKey,
         addHDKey,
         nextIndex,
