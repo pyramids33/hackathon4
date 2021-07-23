@@ -80,6 +80,21 @@ function makeProgram (initWallet, getWallet) {
             if (options.list) console.table(ctxos.map(displayTxo));
         });
 
+    program.command('show-chaintips')
+        .description('show the chaintip(s)')
+        .action (async (options, command) => {
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            let rows = wallet.headers.getChainTips();
+
+            console.table(rows.map(function (item) {
+                return { 
+                    height: item.height,
+                    blockId: Buffer.from(item.hash).reverse().toString('hex')
+                }
+            }));
+        }); 
+
     program.command('sync-headers')
         .description('download block headers')
         .action (async (options, command) => {
@@ -88,7 +103,7 @@ function makeProgram (initWallet, getWallet) {
             let network = wallet.getNetwork();
 
             let chainTip = wallet.headers.getChainTips()[0];
-            console.log('chaintip', chainTip.height, chainTip.hash);
+            console.log('chaintip', chainTip.height, chainTip.hash.toString('hex'));
             
             SyncHeaders(
                 network.peers[0], 
@@ -99,7 +114,7 @@ function makeProgram (initWallet, getWallet) {
                 function (report) {
                     let chainTip = wallet.headers.getChainTips()[0];
                     console.log('received', report.headerCount, 'headers, processed in', (report.processingTime/1000).toFixed(2), 'seconds');
-                    console.log('chaintip', chainTip.height, chainTip.hash);
+                    console.log('chaintip', chainTip.height, chainTip.hash.toString('hex'));
                 }
             );
         });
@@ -231,119 +246,32 @@ function makeProgram (initWallet, getWallet) {
             let network = wallet.getNetwork();
             let toAddress = network.Address.fromString(pubKeyHash);
 
-            let feePerKbNum = network.constants.TxBuilder.feePerKbNum;
-            let dust = network.constants.TxBuilder.dust;
-
             let tx = new bsv.Tx();
             tx.addTxOut(new bsv.Bn(amount), toAddress.toTxOutScript());
 
-            let lastUtxoRowId = 0;
-            let valueIn = new bsv.Bn(0);
-            let valueOut = new bsv.Bn(amount);
-            let unlockScriptWriters = {};
-            let scriptSigsTotal = 0;
+            tx = wallet.fundTransaction(tx, options.keyname);
 
-            while (true) {
-
-                let utxoInfo = wallet.txoutputs.nextUtxo(lastUtxoRowId);
-                
-                if (utxoInfo === undefined) {
-                    throw new Error('not enough utxos')
-                }
-
-                lastUtxoRowId = utxoInfo.rowid;
-
-                let utxoId = utxoInfo.txhash.toString('hex') + ':' + utxoInfo.txoutnum.toString();
-
-                let spendTxInfo = wallet.transactions.txByHash(utxoInfo.txhash);
-                let spendTx = bsv.Tx.fromBuffer(spendTxInfo.rawtx);
-                let spendTxOut = spendTx.txOuts[utxoInfo.txoutnum];
-
-                let scriptHash = bsv.Hash.sha256(spendTxOut.script.toBuffer());
-                let scriptInfo = wallet.scripts.getScriptByHash(scriptHash);
-                let scriptData = JSON.parse(scriptInfo.data.toString());
-
-                let spendHandler = wallet.getSpendHandler(utxoInfo.type);
-
-                unlockScriptWriters[utxoId] = function (tx, nIn, hashCache) { 
-                    return spendHandler.getUnlockScript(tx, nIn, scriptData, spendTxOut, hashCache);
-                }
-
-                let scriptSigSize = spendHandler.calculateSize(scriptData);
-                
-                scriptSigsTotal += scriptSigSize;
-
-                tx.addTxIn(utxoInfo.txhash, utxoInfo.txoutnum, new bsv.Script());
-
-                valueIn = valueIn.add(spendTxOut.valueBn);
-
-                let estimatedSize = tx.toBuffer().length + scriptSigsTotal;
-                let estimatedFee = new bsv.Bn(Math.ceil(estimatedSize / 1000 * feePerKbNum));
-                let changeAmount = valueIn.sub(valueOut);
-                let minValueIn = valueOut.add(estimatedFee).add(dust);
-
-                // console.log(
-                //     'a',
-                //     valueIn.toNumber(), 
-                //     valueOut.toNumber(), 
-                //     changeAmount.toNumber(), 
-                //     estimatedFee.toNumber(),
-                //     minValueIn.toNumber(), 
-                //     '___',
-                //     tx.toBuffer().length, 
-                //     scriptSigsTotal, 
-                //     estimatedSize);
-
-                while (changeAmount.gt(dust)) {
-                    let changeScript = P2PKH.receive(wallet.scripts, wallet.hdkeys, 'default', network);
-                    let changeTxOut = bsv.TxOut.fromProperties(new bsv.Bn(0), changeScript);
-                    
-                    estimatedSize += changeTxOut.toBuffer().length;
-                    estimatedFee = new bsv.Bn(Math.ceil(estimatedSize / 1000 * feePerKbNum));
-
-                    if (changeAmount.sub(estimatedFee).gt(3000)) {
-                        changeTxOut.valueBn = changeAmount.sub(estimatedFee).div(2);
-                    } else {
-                        changeTxOut.valueBn = changeAmount.sub(estimatedFee);
-                    }
-                    
-                    tx.addTxOut(changeTxOut);
-
-                    valueOut = valueOut.add(changeTxOut.valueBn);
-
-                    changeAmount = valueIn.sub(valueOut);
-                    minValueIn = valueOut.add(estimatedFee);
-
-                    // console.log(
-                    //     'c',
-                    //     valueIn.toNumber(), 
-                    //     valueOut.toNumber(), 
-                    //     changeAmount.toNumber(), 
-                    //     estimatedFee.toNumber(),
-                    //     minValueIn.toNumber(), 
-                    //     changeTxOut.valueBn.toNumber(),
-                    //     tx.toBuffer().length, 
-                    //     scriptSigsTotal, 
-                    //     estimatedSize);
-                }
-
-                if (valueIn.lt(minValueIn)) {
-                    // need more inputs to fund tx
-                    continue;
-                }
-
-                break;
+            if (options.outputFile) {
+                fs.writeFileSync(options.outputFile, tx.toBuffer());
+            } else {
+                process.stdout.write(tx.toBuffer());
             }
+        });
 
-            let hashCache = {};
+    program.command('spend-all <pubKeyHash>')
+        .description('create a tx sending all spendable to address (p2pkh)')
+        .option('-o --outputFile <filename>', 'save to file location.')
+        .action (async (pubKeyHash, options, command) => {
 
-            tx.txIns.forEach(function (txIn, nIn) {
-                let utxoId = txIn.txHashBuf.toString('hex') + ':' + txIn.txOutNum.toString();
-                if (unlockScriptWriters[utxoId]) {
-                    let script = unlockScriptWriters[utxoId](tx, nIn, hashCache);
-                    txIn.setScript(script);
-                }
-            });
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            let network = wallet.getNetwork();
+            let toAddress = network.Address.fromString(pubKeyHash);
+
+            let tx = new bsv.Tx();
+            tx.addTxOut(bsv.TxOut.fromProperties(new bsv.Bn(0), toAddress.toTxOutScript()));
+
+            tx = wallet.fundTransaction(tx, undefined, undefined, true, 0);
 
             if (options.outputFile) {
                 fs.writeFileSync(options.outputFile, tx.toBuffer());
@@ -443,7 +371,7 @@ function makeProgram (initWallet, getWallet) {
         .action (async (minerName, txfilename, options, command) => {
             let db = OpenSqliteFile(command.parent.opts().dbfile);
             let wallet = getWallet(db);
-            let minerInfo = wallet.mapi.getMinerIdByName(minerName);
+            let minerInfo = wallet.mapi.getMinerByName(minerName);
             
             if (minerInfo === undefined) {
                 console.error('Unknown miner');
@@ -456,6 +384,7 @@ function makeProgram (initWallet, getWallet) {
             requestUrl.pathname = '/mapi/tx';
 
             try {
+                // when you get spv channels try a merkleproof call back
                 let response = await axios.post(
                     requestUrl.toString() ,
                     { rawtx: txBuf.toString('hex') },
@@ -482,6 +411,8 @@ function makeProgram (initWallet, getWallet) {
             }
 
         });
+
+
 
     return program;
 }

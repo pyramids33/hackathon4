@@ -158,6 +158,145 @@ class BaseWallet {
     getSpendHandler (type) {
         return this.#spendHandlers[type];
     }
+
+    //
+    // add inputs and change to a transaction
+    // changeKeyName is the name of hdkey to generate addresses
+    // feePerKbNum defaults to bsv network constants. query the mapi table to pass in a custom rate
+    // if addScriptSigs is true, the signed unlocking scripts are added (SIGHASH_ALL)
+    // if spendAllTxOutNum is defined, send all change to that output (dont add more change outputs)
+    // todo: factor this to something like bsv.TxBuilder 
+    //
+    fundTransaction (tx, changeKeyName='default', feePerKbNum, addScriptSigs=true, spendAllTxOutNum) {
+
+        let lastUtxoRowId = 0;
+        let valueIn = new bsv.Bn(0);
+        let valueOut = tx.txOuts.reduce((p,c) => p.add(c.valueBn), new bsv.Bn(0));
+        let unlockScriptWriters = {};
+        let scriptSigsTotal = 0;
+
+        let network = this.getNetwork();
+        feePerKbNum = feePerKbNum || network.constants.TxBuilder.feePerKbNum;
+        let dust = network.constants.TxBuilder.dust;
+
+        while (true) {
+
+            let utxoInfo = this.txoutputs.nextUtxo(lastUtxoRowId);
+            
+            if (utxoInfo === undefined) {
+                if (spendAllTxOutNum !== undefined) {
+                    // we spent all utxos as intended so we can exit loop here
+                    break;
+                }
+                throw new Error('Not enough UTXOs');
+            }
+
+            lastUtxoRowId = utxoInfo.rowid;
+
+            let utxoId = utxoInfo.txhash.toString('hex') + ':' + utxoInfo.txoutnum.toString();
+
+            let spendTxInfo = this.transactions.txByHash(utxoInfo.txhash);
+            let spendTx = bsv.Tx.fromBuffer(spendTxInfo.rawtx);
+            let spendTxOut = spendTx.txOuts[utxoInfo.txoutnum];
+
+            let scriptHash = bsv.Hash.sha256(spendTxOut.script.toBuffer());
+            let scriptInfo = this.scripts.getScriptByHash(scriptHash);
+            let scriptData = JSON.parse(scriptInfo.data.toString());
+
+            let spendHandler = this.getSpendHandler(utxoInfo.type);
+
+            unlockScriptWriters[utxoId] = function (tx, nIn, hashCache) { 
+                return spendHandler.getUnlockScript(tx, nIn, scriptData, spendTxOut, hashCache);
+            }
+
+            let scriptSigSize = spendHandler.calculateSize(scriptData);
+            
+            scriptSigsTotal += scriptSigSize;
+
+            tx.addTxIn(utxoInfo.txhash, utxoInfo.txoutnum, new bsv.Script());
+
+            valueIn = valueIn.add(spendTxOut.valueBn);
+
+            let estimatedSize = tx.toBuffer().length + scriptSigsTotal;
+            let estimatedFee = new bsv.Bn(Math.ceil(estimatedSize / 1000 * feePerKbNum));
+            let changeAmount = valueIn.sub(valueOut);
+            let minValueIn = valueOut.add(estimatedFee).add(dust);
+
+            // console.log(
+            //     'a',
+            //     valueIn.toNumber(), 
+            //     valueOut.toNumber(), 
+            //     changeAmount.toNumber(), 
+            //     estimatedFee.toNumber(),
+            //     minValueIn.toNumber(), 
+            //     '___',
+            //     tx.toBuffer().length, 
+            //     scriptSigsTotal, 
+            //     estimatedSize);
+
+            if (spendAllTxOutNum === undefined) {
+                
+                // add change outputs back to us
+
+                while (changeAmount.gt(dust)) {
+                    let changeScript = P2PKH.receive(this.scripts, this.hdkeys, changeKeyName, network);
+                    let changeTxOut = bsv.TxOut.fromProperties(new bsv.Bn(0), changeScript);
+                    
+                    estimatedSize += changeTxOut.toBuffer().length;
+                    estimatedFee = new bsv.Bn(Math.ceil(estimatedSize / 1000 * feePerKbNum));
+
+                    if (changeAmount.sub(estimatedFee).gt(200000)) {
+                        changeTxOut.valueBn = changeAmount.sub(estimatedFee).div(2);
+                    } else {
+                        changeTxOut.valueBn = changeAmount.sub(estimatedFee);
+                    }
+                    
+                    tx.addTxOut(changeTxOut);
+
+                    valueOut = valueOut.add(changeTxOut.valueBn);
+
+                    changeAmount = valueIn.sub(valueOut);
+                    minValueIn = valueOut.add(estimatedFee);
+
+                    // console.log(
+                    //     'c',
+                    //     valueIn.toNumber(), 
+                    //     valueOut.toNumber(), 
+                    //     changeAmount.toNumber(), 
+                    //     estimatedFee.toNumber(),
+                    //     minValueIn.toNumber(), 
+                    //     changeTxOut.valueBn.toNumber(),
+                    //     tx.toBuffer().length, 
+                    //     scriptSigsTotal, 
+                    //     estimatedSize);
+                }
+            } else {
+                tx.txOuts[spendAllTxOutNum].valueBn = changeAmount.sub(estimatedFee);
+            }
+
+            if (valueIn.lt(minValueIn) || spendAllTxOutNum !== undefined) {
+                // need more inputs to fund tx, or we want to spend everything
+                continue;
+            }
+
+            // the tx is funded
+            break;
+        }
+
+        if (addScriptSigs) {
+            let hashCache = {};
+
+            tx.txIns.forEach(function (txIn, nIn) {
+                let utxoId = txIn.txHashBuf.toString('hex') + ':' + txIn.txOutNum.toString();
+                if (unlockScriptWriters[utxoId]) {
+                    let script = unlockScriptWriters[utxoId](tx, nIn, hashCache);
+                    txIn.setScript(script);
+                }
+            });
+        }
+
+        return tx;
+    }
 }
 
 module.exports = BaseWallet;

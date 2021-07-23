@@ -47,7 +47,7 @@ function createGetHeadersMessageBuffer (protocolVersion, blockLocatorRows) {
     bw.writeVarIntNum(blockLocatorRows.length);
     
     blockLocatorRows.forEach(function (item) {
-        bw.write(Buffer.from(item.hash,'hex'));
+        bw.write(item.hash);
     });
 
     bw.write(Buffer.alloc(32));
@@ -99,14 +99,14 @@ function SyncHeaders (host, port, protocolVersion, netMagic, headersDb, onReport
                 let header = bsv.BlockHeader.fromBr(br);
                 br.readVarIntNum(); // transaction count, dont need it
 
-                let headerHash = bsv.Hash.sha256Sha256(header.toBuffer()).toString('hex');
-                let prevHeaderRow = headersDb.getByHash(header.prevBlockHashBuf.toString('hex'));
+                let headerHash = bsv.Hash.sha256Sha256(header.toBuffer());
+                let prevHeaderRow = headersDb.getByHash(header.prevBlockHashBuf);
                 let height = prevHeaderRow ? prevHeaderRow.height + 1 : 1;
 
                 headersDb.addHeader(
                     headerHash, height, header.versionBytesNum, 
-                    header.prevBlockHashBuf.toString('hex'), 
-                    header.merkleRootBuf.toString('hex'), 
+                    header.prevBlockHashBuf, 
+                    header.merkleRootBuf, 
                     header.time, header.bits, header.nonce
                 );
             }

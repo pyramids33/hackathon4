@@ -1,3 +1,0 @@
-this code was brought in from hackathon3
-will be similar but rewrite/refactor some of it to include the new stuff
-for this hackathon4

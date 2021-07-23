@@ -1,0 +1,7 @@
+This code was brought in from hackathon3 project
+
+I rewrote it to use bsv 2.0 js
+Added merkle proofs
+Block headers download from the P2P Network
+Added Mapi Functions
+Made a wallet base class that can be extended

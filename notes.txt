@@ -73,5 +73,12 @@ pruning - if all the utxos are spent, you could prune the transaction
 
 channels 
 requests publicwrite/privateread { tx1, response_channel, response_channel_token }
-response privateread/privatewrite { tx3 }
-publish  publicread/privatewrite { tx3 }
+response privateread/privatewrite { tx2 }
+publish  publicread/privatewrite { tx2 }
+
+start
+utxos => custom
+
+getresponses
+
+custom spendhandler
