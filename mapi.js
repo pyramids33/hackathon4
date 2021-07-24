@@ -1,7 +1,8 @@
 
 
 function updateSchema (db) {
-    db.prepare('create table if not exists mapi_miners (name text primary key, pubkey blob, endpoint text, feeexpiry int, feequote text)').run();
+    db.prepare(`create table if not exists mapi_miners (name text primary key, pubkey blob, 
+        endpoint text, feeexpiry int, feequote text, callbacktoken text)`).run();
 }
 
 function MapiDb (db) {
@@ -30,6 +31,12 @@ function MapiDb (db) {
         return psSetFeeQuote.run(expiry, payload, name);
     }
 
+    const psSetCallbackToken = db.prepare('update mapi_miners set callbacktoken = ? where name = ?');
+
+    function setCallbackToken (name, token) {
+        return psSetCallbackToken.run(token, name);
+    }
+
     const psValidFeeQuotes = db.prepare('select * from mapi_miners where feeexpiry > ?');
     
     function validFeeQuotes (currentTime) {
@@ -42,7 +49,8 @@ function MapiDb (db) {
         getMinerByName,
         allMiners,
         setFeeQuote,
-        validFeeQuotes
+        validFeeQuotes,
+        setCallbackToken
     }
 }
 

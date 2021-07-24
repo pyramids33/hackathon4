@@ -36,6 +36,18 @@ function HeadersDb (db) {
         return psGetChainTips.all();
     }
 
+    const psDeleteAll = db.prepare('delete from headers');
+
+    function fullReset (network) {
+        psDeleteAll.run();    
+        addHeader(
+            Buffer.from(network.genesisBlock.hash,'hex'), 0, 1, null, 
+            Buffer.from(network.genesisBlock.merkleRoot,'hex'), 
+            network.genesisBlock.time, 
+            network.genesisBlock.bits, 
+            network.genesisBlock.nonce);
+    }
+
     function resolveOrphans (height, rows) {
         // we have more than one header row at this height.
         // check the next few blocks to eliminate the orphaned chains
@@ -91,6 +103,7 @@ function HeadersDb (db) {
         getByHeight,
         resolveOrphans,
         getBlockLocatorRows,
+        fullReset,
         transaction: Transactor(db)
     }
 }
@@ -105,5 +118,5 @@ function updateSchema (db) {
 
 module.exports = {
     updateSchema,
-    api: HeadersDb
+    api: HeadersDb,
 }

@@ -11,8 +11,6 @@ console.log(creds)
 console.log(authHeader)
 console.log(Buffer.from(creds.UserId+':'+creds.Password).toString('base64'));
 
-process.exit(1)
-
 (async function () {
 try {
     
@@ -26,3 +24,37 @@ try {
 }
 })();
 
+/*
+{
+    "id": "qVVJCE5kA5ftIdOI_7njM8KMlPFUVQpZx-jlwHFcIVtUfPU1_zXAcnTrCjJz-45QZAG8hJy2OhGQzjFtncAHlQ",
+    "href": "https://hack.spvchannels.io/api/v1/channel/qVVJCE5kA5ftIdOI_7njM8KMlPFUVQpZx-jlwHFcIVtUfPU1_zXAcnTrCjJz-45QZAG8hJy2OhGQzjFtncAHlQ",
+    "public_read": false,
+    "public_write": false,
+    "sequenced": false,
+    "locked": false,
+    "head": 0,
+    "retention": {
+      "min_age_days": 0,
+      "max_age_days": 0,
+      "auto_prune": true
+    },
+    "access_tokens": [
+      {
+        "id": "1201",
+        "token": "NSylXPqIZduVtZ5KarhXP8nA31IuS-ncQ4dQevK8Sw8B9BsGM1akXZMDcC6fF0d6i-yTKOCqqQdBYLBJBVxWfA",
+        "description": "Owner",
+        "can_read": true,
+        "can_write": true
+      }
+    ]
+  }
+
+{
+  "id": "1204",
+  "token": "K4LF0bMCZCCBAbHOdDLTzRoUuJCQLD5N9Z1UjkaVZoqIgbjL25xcSIXKyb8H8_kw0MPiMYPTQ5tU8hLnv9aquw",
+  "description": "string",
+  "can_read": false,
+  "can_write": true
+}
+
+*/

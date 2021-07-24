@@ -12,6 +12,10 @@ function WalletMetaDb (db) {
         return psAddMetaData.run(id, value);
     }
 
+    function setJSON (id, value) {
+        return psAddMetaData.run(id, JSON.stringify(value));
+    }
+
     function getValue (id) {
         return psGetValueById.pluck().get(id);
     }
@@ -21,8 +25,14 @@ function WalletMetaDb (db) {
         return v === undefined ? undefined : v.toString();
     }
 
+    function getJSON (id) {
+        let v = getValue(id);
+        if (v === undefined) return v;
+        return JSON.parse(v.toString());
+    }
+
     return {
-        setValue, getValue, getString
+        setValue, setJSON, getValue, getString, getJSON
     }
 }
 

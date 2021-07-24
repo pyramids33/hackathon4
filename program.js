@@ -97,10 +97,15 @@ function makeProgram (initWallet, getWallet) {
 
     program.command('sync-headers')
         .description('download block headers')
+        .option('-r --reset', 'fully reset headers from genesis')
         .action (async (options, command) => {
             let db = OpenSqliteFile(command.parent.opts().dbfile);
             let wallet = getWallet(db);
             let network = wallet.getNetwork();
+
+            if (options.reset) {
+                wallet.headers.fullReset(network);
+            }
 
             let chainTip = wallet.headers.getChainTips()[0];
             console.log('chaintip', chainTip.height, chainTip.hash.toString('hex'));
@@ -142,7 +147,7 @@ function makeProgram (initWallet, getWallet) {
             wallet.hdkeys.addHDKey(name, hdKey.toBuffer());
         });
 
-    program.command('transaction')
+    program.command('tx')
         .description('process a transaction')
         .option('-f, --file <filepath>', 'read tx from binary file')
         .option('-x, --hexfile <filepath>', 'read tx from a file containing a hex string. such as from WhatsOnChain api')
@@ -214,6 +219,24 @@ function makeProgram (initWallet, getWallet) {
                        
                     }
                 }
+            }
+        });
+
+    program.command('download-tx <txid>')
+        .description('download tx from whats on chain')
+        .action (async (txid, options, command) => {
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            let network = wallet.getNetwork();
+            
+            let networkName = network.name === 'mainnet' ? 'main' : 'test';
+            let url = `https://api.whatsonchain.com/v1/bsv/${networkName}/tx/${txid}/hex`;
+            
+            try {
+                let response = await axios.get(url);
+                process.stdout.write(Buffer.from(response.data,'hex'));
+            } catch(error) {
+                console.error(error.message);
             }
         });
 
@@ -290,38 +313,47 @@ function makeProgram (initWallet, getWallet) {
 
     program.command('show-mapi')
         .description('show mapi endpoints')
+        .option('-n --name <name>', 'show by name')
         .action (async (options, command) => {
             let db = OpenSqliteFile(command.parent.opts().dbfile);
             let wallet = getWallet(db);
 
-            let miners = wallet.mapi.allMiners();
+            if (options.name) {
 
-            let dataOut = miners.map(function (item) {
-                let retObj = { 
-                    name: item.name,
-                    endpoint: item.endpoint,
-                    expires: undefined,
-                    standard: undefined,
-                    data: undefined
-                };
+                let miner = wallet.mapi.getMinerByName(options.name);
+                console.log(miner);
 
-                if (item.feequote && item.feeexpiry > Date.now()) {
-                    
-                    retObj.expires = ((item.feeexpiry-Date.now())/1000/60).toFixed(0) + ' hrs';
+            } else {
 
-                    let quoteObj = JSON.parse(item.feequote);
-                    
-                    quoteObj.fees.forEach(function (x) {
-                        if (x.feeType === 'standard' || x.feeType === 'data') {
-                            retObj[x.feeType] = Math.ceil(x.miningFee.satoshis/(x.miningFee.bytes/1000));
-                        }
-                    });  
-                }
+                let miners = wallet.mapi.allMiners();
 
-                return retObj;
-            });
+                let dataOut = miners.map(function (item) {
+                    let retObj = { 
+                        name: item.name,
+                        endpoint: item.endpoint,
+                        expires: undefined,
+                        standard: undefined,
+                        data: undefined
+                    };
 
-            console.table(dataOut);
+                    if (item.feequote && item.feeexpiry > Date.now()) {
+                        
+                        retObj.expires = ((item.feeexpiry-Date.now())/1000/60).toFixed(0) + ' hrs';
+
+                        let quoteObj = JSON.parse(item.feequote);
+                        
+                        quoteObj.fees.forEach(function (x) {
+                            if (x.feeType === 'standard' || x.feeType === 'data') {
+                                retObj[x.feeType] = Math.ceil(x.miningFee.satoshis/(x.miningFee.bytes/1000));
+                            }
+                        });  
+                    }
+
+                    return retObj;
+                });
+
+                console.table(dataOut);
+            }
         });
 
     program.command('get-fee-quote <miner>')
@@ -366,6 +398,49 @@ function makeProgram (initWallet, getWallet) {
 
         });
 
+    program.command('set-mapi-spvchannel <url> <token>')
+        .description('set callback url for merkle proofs')
+        .action (async (url, token, options, command) => {
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            wallet.walletMeta.setJSON('mapi-spvchannel', { url, token });
+        });
+
+    program.command('set-mapi-spvtoken <name> <token>')
+        .description('set miners token to use when sending merkle proof callbacks')
+        .action (async (name, token, options, command) => {
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            wallet.mapi.setCallbackToken(name, token);
+        });
+
+    program.command('check-mapi-spvchannel')
+        .description('check spv channel for merkle proof')
+        .action (async (options, command) => {
+
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            let channelInfo = wallet.walletMeta.getJSON('mapi-spvchannel');
+
+            if (channelInfo === undefined) {
+                console.error('Channel not defined');
+                process.exit(1);
+            }
+
+            //console.log(channelInfo);
+
+            try {
+                let response = await axios.get(channelInfo.url, { headers: { 'Authorization': 'Bearer ' + channelInfo.token }})         
+                console.log(response.data);         
+            } catch (error) {
+                if (error.response) {
+                    console.log(error.response.status);
+                } else {
+                    console.log(error.message);
+                }
+            }
+        });
+
     program.command('submit-tx <miner> <txfilename>')
         .description('submit tx via mapi')
         .action (async (minerName, txfilename, options, command) => {
@@ -383,11 +458,23 @@ function makeProgram (initWallet, getWallet) {
             let requestUrl = new URL(minerInfo.endpoint);
             requestUrl.pathname = '/mapi/tx';
 
+            let requestParams = { 
+                rawtx: txBuf.toString('hex'),
+                merkleProof: true,
+                merkleFormat: 'TSC'
+            };
+
+            let channelInfo = wallet.walletMeta.getString('mapi-spvchannel');
+
+            if (channelInfo && minerInfo.callbacktoken) {
+                requestParams.callbackUrl = channelInfo.url;
+                requestParams.callbackToken = 'Authorization: Bearer ' + minerInfo.callbacktoken;
+            }
+
             try {
-                // when you get spv channels try a merkleproof call back
                 let response = await axios.post(
-                    requestUrl.toString() ,
-                    { rawtx: txBuf.toString('hex') },
+                    requestUrl.toString(),
+                    requestParams,
                     { headers: { 'Content-Type': 'application/json' }}
                 );
                 
@@ -395,7 +482,7 @@ function makeProgram (initWallet, getWallet) {
 
                     let hashBuf = bsv.Hash.sha256(Buffer.from(response.data.payload));
                     let sig = bsv.Sig.fromString(response.data.signature);
-                    let pubKey = bsv.PubKey.fromString(response.data.publicKey)
+                    let pubKey = bsv.PubKey.fromString(minerInfo.pubkey);
                     let sigVerified = bsv.Ecdsa.verify(hashBuf, sig, pubKey, 'big');
                     
                     if (!sigVerified) {

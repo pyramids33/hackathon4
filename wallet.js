@@ -90,8 +90,8 @@ class BaseWallet {
 
         // add the genesis header
         Headers.api(db).addHeader(
-            networkInfo.genesisBlock.hash, 0, 1, null, 
-            networkInfo.genesisBlock.merkleRoot, 
+            Buffer.from(networkInfo.genesisBlock.hash,'hex'), 0, 1, null, 
+            Buffer.from(networkInfo.genesisBlock.merkleRoot,'hex'), 
             networkInfo.genesisBlock.time, 
             networkInfo.genesisBlock.bits, 
             networkInfo.genesisBlock.nonce);
