@@ -500,6 +500,37 @@ function makeProgram (initWallet, getWallet) {
         });
 
 
+    const Orders = require('./orders.js');
+    const Order = Orders.Order;
+
+    program.command('order-start <orderfile>')
+        .description('create a tx sending all spendable to address (p2pkh)')
+        .option('-o --outputFile <filename>', 'save to file location.')
+        .action (async (orderfile, options, command) => {
+
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            let network = wallet.getNetwork();
+
+            Orders.updateSchema(db);
+            let ordersDb = Orders.api(db);
+            
+            let orderjson = JSON.parse(fs.readFileSync(orderfile).toString());
+            let order = Order.fromJSON(orderjson);
+            let p2PubKey = bsv.PubKey.fromString(orderjson.pubKey);
+
+            let tx = Orders.startOrderTx(order, p2PubKey, ordersDb, wallet.scripts, wallet.hdkeys, 'default', network);
+            
+            tx = wallet.fundTransaction(tx, 'default', undefined, true);
+
+            if (options.outputFile) {
+                fs.writeFileSync(options.outputFile, tx.toBuffer());
+            } else {
+                process.stdout.write(tx.toBuffer());
+            }
+        });
+
+
 
     return program;
 }
