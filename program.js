@@ -385,14 +385,18 @@ function makeProgram (initWallet, getWallet) {
                 if (response.data) {
                     let hashBuf = bsv.Hash.sha256(Buffer.from(response.data.payload));
                     let sig = bsv.Sig.fromString(response.data.signature);
-                    let pubKey = bsv.PubKey.fromString(response.data.publicKey)
+                    let pubKey = bsv.PubKey.fromString(minerInfo.pubkey);
                     let sigVerified = bsv.Ecdsa.verify(hashBuf, sig, pubKey, 'big');
-                    if (sigVerified) {
-                        let payloadObj = JSON.parse(response.data.payload);
-                        let expiry = new Date(payloadObj.expiryTime).valueOf();
-                        wallet.mapi.setFeeQuote(minerInfo.name, expiry, response.data.payload);
-                        console.log(response.data.payload.fees);
+                    
+                    if (!sigVerified) {
+                        console.error('WARNING: Signature verification failed.');
                     }
+
+                    let payloadObj = JSON.parse(response.data.payload);
+                    let expiry = new Date(payloadObj.expiryTime).valueOf();
+                    wallet.mapi.setFeeQuote(minerInfo.name, expiry, response.data.payload);
+                    
+                    console.log(payloadObj.fees);
                 }
             } catch (error) {
                 console.error(error);
@@ -406,6 +410,14 @@ function makeProgram (initWallet, getWallet) {
             let db = OpenSqliteFile(command.parent.opts().dbfile);
             let wallet = getWallet(db);
             wallet.walletMeta.setJSON('mapi-spvchannel', { url, token });
+        });
+
+    program.command('show-mapi-spvchannel')
+        .description('show callback url for merkle proofs')
+        .action (async (options, command) => {
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            console.log(wallet.walletMeta.getJSON('mapi-spvchannel'));
         });
 
     program.command('set-mapi-spvtoken <name> <token>')
@@ -462,16 +474,16 @@ function makeProgram (initWallet, getWallet) {
 
             let requestParams = { 
                 rawtx: txBuf.toString('hex')
-               // merkleProof: true,
-                //merkleFormat: 'TSC'
             };
 
-            //let channelInfo = wallet.walletMeta.getString('mapi-spvchannel');
+            let channelInfo = JSON.parse(wallet.walletMeta.getString('mapi-spvchannel'));
 
-            //if (channelInfo && minerInfo.callbacktoken) {
-            //    requestParams.callbackUrl = channelInfo.url;
-            //    requestParams.callbackToken = 'Authorization: Bearer ' + minerInfo.callbacktoken;
-            //}
+            if (channelInfo && minerInfo.callbacktoken) {
+                requestParams.callbackUrl = channelInfo.url;
+                requestParams.callbackToken = 'Authorization: Bearer ' + minerInfo.callbacktoken;
+                requestParams.merkleProof = true;
+                requestParams.merkleFormat = 'TSC';
+            }
 
             try {
                 let response = await axios.post(
