@@ -27,18 +27,19 @@ function makeProgram (initWallet, getWallet) {
 
     program.command('init')
         .description('create a new wallet file')
-        .option('-o --outputFile <filename>', 'save as file location. if this is omitted the wallet is written to stdout.')
         .option('-n --network <network>', 'mainnet or testnet', 'mainnet')
         .action (function (options, command) {
             let db;
-            let { network, outputFile } = options;
+            let { network } = options;
             try {
                 db = initWallet(network, Date.now());
-                if (outputFile) {
-                    fs.writeFileSync(outputFile, db.serialize(), { flag: 'wx' });
-                } else {
-                    process.stdout.write(db.serialize());
+                
+                if (fs.existsSync(command.parent.opts().dbfile)){
+                    console.error('File already exists.');
+                    process.exit(1);
                 }
+
+                fs.writeFileSync(command.parent.opts().dbfile, db.serialize(), { flag: 'wx' });
             } catch (err) {
                 if (err.code === 'EEXIST') {
                     console.error(`ERROR: file already exists`);
