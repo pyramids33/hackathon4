@@ -111,5 +111,12 @@ SPV Channels
     - I was going to add more functions around SPV channels, but they would not be in the wallet code.
       E.g, the ordering system can track orders and notify users on SPV channels, just use the wallet 
       to create/submit transactions. 
-      In this project I mock it up using some hardcoded scripts.
+      In this project I mock it up using some hardcoded scripts, which are in the dev folder of the repo.
 
+    ```
+    // send order and tx to vendor spv channel
+    > node dev/sendOrderToVendorSPV.js ./data/wallet1/order2.json ./data/wallet1/tx_order2.bin
+
+    // download orders into folder for processing into order system 
+    > node dev/getOrdersFromVendorSPV.js ./data/vendorspv/
+    ```
