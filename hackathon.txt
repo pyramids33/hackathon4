@@ -44,7 +44,8 @@ The vendor checks the order and may accept or reject it.
 If accepted, the vendor spends the P2POHPKH output.
 
 If the vendor rejects the order, or the customer wishes to cancel the order,
-the customer may spend the output using their refund key.
+the customer may spend the output using their refund key. The Vendor may also issue
+a refund after spending the order, using the customers refund address.
 
 Example Script:
 
