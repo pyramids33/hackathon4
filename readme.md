@@ -112,3 +112,4 @@ SPV Channels
       E.g, the ordering system can track orders and notify users on SPV channels, just use the wallet 
       to create/submit transactions. 
       In this project I mock it up using some hardcoded scripts.
+
