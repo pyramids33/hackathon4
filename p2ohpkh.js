@@ -72,13 +72,15 @@ class Order extends bsv.Struct {
     constructor (
         dateNum = 0,
         vendor = '',
+        vendorPubKey = new bsv.PubKey(),
         destination = '',
-        nonceBuf = Buffer.alloc(0),
+        nonceBuf = Buffer.alloc(16),
         items = []
     ) {
         super({
             dateNum,
             vendor,
+            vendorPubKey,
             destination,
             nonceBuf,
             items
@@ -89,6 +91,16 @@ class Order extends bsv.Struct {
         return this.items.reduce((p,c) => p + c.price, 0);
     }
 
+    getOrderPubKey () {
+        let nonceBn = bsv.Bn().fromBuffer(this.nonceBuf);
+        return new bsv.PubKey(bsv.Point.getG().mul(nonceBn).add(this.vendorPubKey.point), this.vendorPubKey.compressed);
+    }
+
+    getOrderPrivKey (vendorPrivKey) {
+        let nonceBn = bsv.Bn().fromBuffer(this.nonceBuf);
+        return new bsv.PrivKey(vendorPrivKey.bn.add(nonceBn), vendorPrivKey.compressed, vendorPrivKey.Constants);
+    }
+
     fromJSON (json) {
         const items = [];
         json.items.forEach(function (item) {
@@ -97,6 +109,7 @@ class Order extends bsv.Struct {
         this.fromObject({
             dateNum: json.dateNum,
             vendor: json.vendor,
+            vendorPubKey: bsv.PubKey.fromString(json.vendorPubKey),
             destination: json.destination,
             nonceBuf: Buffer.from(json.nonceBuf,'hex'),
             items
@@ -112,6 +125,7 @@ class Order extends bsv.Struct {
         return {
             dateNum: this.dateNum,
             vendor: this.vendor,
+            vendorPubKey: this.vendorPubKey.toString(),
             destination: this.destination,
             nonceBuf: this.nonceBuf.toString('hex'),
             items
@@ -124,10 +138,13 @@ class Order extends bsv.Struct {
         let vendorLen = br.readVarIntNum();
         this.vendor = br.read(vendorLen).toString('utf8');
 
+        let vendorPubKeyLen = br.readVarIntNum();
+        this.vendorPubKey = bsv.PubKey.fromBuffer(br.read(vendorPubKeyLen));
+
         let destLen = br.readVarIntNum();
         this.destination = br.read(destLen).toString('utf8');
 
-        this.nonceBuf = br.read(32);
+        this.nonceBuf = br.read(16);
 
         let itemCount = br.readVarIntNum();
         
@@ -150,6 +167,10 @@ class Order extends bsv.Struct {
         let vendorBuf = Buffer.from(this.vendor);
         bw.writeVarIntNum(vendorBuf.length);
         bw.write(vendorBuf);
+
+        let vendorPubKeyBuf = this.vendorPubKey.toBuffer();
+        bw.writeVarIntNum(vendorPubKeyBuf.length);
+        bw.write(vendorPubKeyBuf);
 
         let destBuf = Buffer.from(this.destination);
         bw.writeVarIntNum(destBuf.length);
@@ -193,11 +214,10 @@ function getScriptPubKey (orderHash2, orderAddress, refundAddress) {
     return scriptPubKey;
 }
 
-function startOrderTx (order, p2PubKey, ordersDb, scriptsDb, hdkeysDb, hdkeyname, network) {
+function startOrder (order, scriptsDb, hdkeysDb, hdkeyname, network) {
 
     // generate orderPubKey2 from from p2PubKey + nonce
-    let nonceBn = bsv.Bn().fromBuffer(order.nonceBuf);
-    let orderPubKey = new bsv.PubKey(bsv.Point.getG().mul(nonceBn).add(p2PubKey.point), p2PubKey.compressed);
+    let orderPubKey = order.getOrderPubKey();
     let orderAddress = network.Address.fromPubKey(orderPubKey);
 
     let orderBuf = order.toBuffer();
@@ -215,80 +235,84 @@ function startOrderTx (order, p2PubKey, ordersDb, scriptsDb, hdkeysDb, hdkeyname
     let script = getScriptPubKey(orderHash2, orderAddress, refundAddress);
     let scriptHash = bsv.Hash.sha256(script.toBuffer());
 
-    let orderTotal = order.total();
-
-    ordersDb.addOrder(scriptHash, p2PubKey.toString(), order.vendor, order.dateNum, orderTotal, order.toBuffer());
     scriptsDb.addScript(scriptHash, TXO_TYPE, 2, Buffer.from(JSON.stringify(scriptData)));
 
+    return script;
+}
+
+//
+// returns the signed transaction
+// spend the order, if you are the vendor, provide your vendor private key
+// if you are the customer, cancel this order by spending it to yourself with the refund key
+//
+function spendOrder (order, orderTx, vendorPrivKey, refundPrivKey, changeScript, network) {
+
+    let orderHash1 = bsv.Hash.sha256(order.toBuffer());
+    let orderHash2 = bsv.Hash.sha256(orderHash1);
+    let orderTxHash = orderTx.hash();
+
+    let orderTxOut = orderTx.txOuts.find(function (txOut) {
+        return txOut.script.chunks[6].buf.compare(bsv.Hash.sha256Ripemd160(order.getOrderPubKey().toBuffer())) === 0
+            && txOut.script.chunks[1].buf.compare(orderHash2) === 0
+    });
+
+    if (orderTxOut === undefined) {
+        throw new error('Order script not found');
+    }
+
+    let sigKeyPair;
+
+    if (vendorPrivKey) {
+        let sigPrivKey = order.getOrderPrivKey(vendorPrivKey);
+        sigKeyPair = network.KeyPair.fromPrivKey(sigPrivKey);
+    } else if (refundPrivKey) {
+        sigKeyPair = network.KeyPair.fromPrivKey(refundPrivKey);
+
+        if (orderTxOut.script.chunks[10].buf.compare(bsv.Hash.sha256Ripemd160(sigKeyPair.pubKey.toBuffer())) !== 0) {
+            throw new error('Order script (refund key) not found');
+        }
+    }
+
     let tx = new bsv.Tx();
-    tx.addTxOut(new bsv.Bn(orderTotal), script);
+    tx.addTxOut(new bsv.Bn(0), changeScript);
+    tx.addTxIn(orderTxHash, 0, new bsv.Script());
+
+    let estimatedSize = tx.toBuffer().length + 140;
+    let estimatedFee = new bsv.Bn(Math.ceil(estimatedSize / 1000 * network.constants.TxBuilder.feePerKbNum));
+    let changeAmount = orderTxOut.valueBn.sub(estimatedFee);
+
+    tx.txOuts[0].valueBn = changeAmount;
+
+    let sig = tx.sign(
+        sigKeyPair, 
+        bsv.Sig.SIGHASH_ALL | bsv.Sig.SIGHASH_FORKID, 
+        0, 
+        orderTxOut.script, 
+        orderTxOut.valueBn, 
+        bsv.Tx.SCRIPT_ENABLE_SIGHASH_FORKID, {});
+
+    let scriptSig = new bsv.Script();
+    scriptSig.writeBuffer(sig.toTxFormat());
+    scriptSig.writeBuffer(sigKeyPair.pubKey.toBuffer());
+    scriptSig.writeBuffer(Buffer.from(orderHash1,'hex'));
+
+    tx.txIns[0].setScript(scriptSig);
+
     return tx;
 }
 
-function spend (tx, nIn, scriptData, output, hashCache, hdkeysDb, network) {
-
-    let hdkeyinfo = hdkeysDb.getHDKey(scriptData.hdkey);
-    let privKey = network.Bip32.fromBuffer(hdkeyinfo.xprv).deriveChild(scriptData.counter,true).privKey;
-    let pubKey = bsv.PubKey.fromPrivKey(privKey);
-
-    let sig = tx.sign(
-        keyPair, 
-        bsv.Sig.SIGHASH_ALL | bsv.Sig.SIGHASH_FORKID, 
-        nIn, 
-        output.script, 
-        output.valueBn, 
-        bsv.Tx.SCRIPT_ENABLE_SIGHASH_FORKID, hashCache);
-
-    // peer 2 generate scriptSig
-    let scriptSig = new bsv.Script();
-    scriptSig.writeBuffer(sig.toTxFormat());
-    scriptSig.writeBuffer(pubKey.toBuffer());
-    scriptSig.writeBuffer(Buffer.from(scriptData.orderHash1,'hex'));
-
-    return scriptSig;
-}
-
-function SpendHandler (hdkeysDb, network) {
-    return {
-        // generate the unlocking script
-        getUnlockScript: function (tx, nIn, scriptData, output, hashCache={}) {
-            return spend(tx, nIn, scriptData, output, hashCache, hdkeysDb, network);
-        },
-        // calculate the size of the unlocking script
-        calculateSize: function (scriptData) {
-            const sigSize = 1 + 1 + 1 + 1 + 32 + 1 + 1 + 32 + 1 + 1;
-            const pubKeySize = 1 + 1 + 33;
-            const hashSize = 32;
-            return sigSize + pubKeySize + hashSize;
-        }
-    }
-}
-
-
-function updateSchema (db) {
-    db.prepare('create table if not exists orders (scripthash blob, pubkey blob, vendor text, orderdate int, total int, rawdata blob)').run();
-    db.prepare('create index if not exists orders_scripthash on orders(scripthash)').run();
-}
-
-function OrdersDb (db) {
-
-    const psAddOrder = db.prepare('insert into orders (scripthash, pubkey, vendor, orderdate, total, rawdata) values (?,?,?,?,?,?)');
-    
-    function addOrder (scripthash, pubkey, vendor, orderdate, total, rawdata) {
-        return psAddOrder.run(scripthash, pubkey, vendor, orderdate, total, rawdata);
-    }
-
-    return {
-        addOrder
-    }
+function calculateScriptSigSize (scriptData) {
+    const sigSize = 1 + 1 + 1 + 1 + 32 + 1 + 1 + 32 + 1 + 1;
+    const pubKeySize = 1 + 1 + 33;
+    const hashSize = 32;
+    return sigSize + pubKeySize + hashSize;
 }
 
 
 module.exports = {
     Order,
     OrderItem,
-    startOrderTx,
-    SpendHandler,
-    api: OrdersDb,
-    updateSchema
+    startOrder,
+    spendOrder,
+    calculateScriptSigSize
 }

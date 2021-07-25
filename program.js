@@ -7,6 +7,8 @@ const SyncHeaders = require('./p2pnetwork.js');
 const { OpenSqliteFile } = require('./dbutil.js');
 const BaseWallet = require('./wallet.js');
 const P2PKH = require('./p2pkh.js');
+const P2OHPKH = require('./p2ohpkh.js');
+
 const { TXO_STATUS } = require('./txoutputs.js');
 
 function getWallet (db) {
@@ -459,17 +461,17 @@ function makeProgram (initWallet, getWallet) {
             requestUrl.pathname = '/mapi/tx';
 
             let requestParams = { 
-                rawtx: txBuf.toString('hex'),
-                merkleProof: true,
-                merkleFormat: 'TSC'
+                rawtx: txBuf.toString('hex')
+               // merkleProof: true,
+                //merkleFormat: 'TSC'
             };
 
-            let channelInfo = wallet.walletMeta.getString('mapi-spvchannel');
+            //let channelInfo = wallet.walletMeta.getString('mapi-spvchannel');
 
-            if (channelInfo && minerInfo.callbacktoken) {
-                requestParams.callbackUrl = channelInfo.url;
-                requestParams.callbackToken = 'Authorization: Bearer ' + minerInfo.callbacktoken;
-            }
+            //if (channelInfo && minerInfo.callbacktoken) {
+            //    requestParams.callbackUrl = channelInfo.url;
+            //    requestParams.callbackToken = 'Authorization: Bearer ' + minerInfo.callbacktoken;
+            //}
 
             try {
                 let response = await axios.post(
@@ -500,11 +502,41 @@ function makeProgram (initWallet, getWallet) {
         });
 
 
-    const Orders = require('./orders.js');
-    const Order = Orders.Order;
+    program.command('set-vendor-key <privkey>')
+        .description('set the vendor private key for receiving orders')
+        .action (async (privkey, options, command) => {
+
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            let network = wallet.getNetwork();
+
+            let pkcheck = network.PrivKey.fromString(privkey);
+            wallet.walletMeta.setValue('vendorPrivKey', pkcheck.toString());
+        });
+
+    program.command('show-vendor-key')
+        .description('set the vendor private key for receiving orders')
+        .action (async (options, command) => {
+
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            let network = wallet.getNetwork();
+
+            let vendorKeyStr = wallet.walletMeta.getString('vendorPrivKey');
+
+            if (vendorKeyStr) {
+                let privKey = network.PrivKey.fromString(vendorKeyStr);
+                let pubKey = bsv.PubKey.fromPrivKey(privKey);
+                
+                console.log(privKey.toString());
+                console.log(pubKey.toString());
+            } else {
+                console.log('Vendor key not defined.');
+            }
+        });
 
     program.command('order-start <orderfile>')
-        .description('create a tx sending all spendable to address (p2pkh)')
+        .description('create a tx paying the order in orderfile')
         .option('-o --outputFile <filename>', 'save to file location.')
         .action (async (orderfile, options, command) => {
 
@@ -512,15 +544,13 @@ function makeProgram (initWallet, getWallet) {
             let wallet = getWallet(db);
             let network = wallet.getNetwork();
 
-            Orders.updateSchema(db);
-            let ordersDb = Orders.api(db);
-            
             let orderjson = JSON.parse(fs.readFileSync(orderfile).toString());
-            let order = Order.fromJSON(orderjson);
-            let p2PubKey = bsv.PubKey.fromString(orderjson.pubKey);
+            let order = P2OHPKH.Order.fromJSON(orderjson);
 
-            let tx = Orders.startOrderTx(order, p2PubKey, ordersDb, wallet.scripts, wallet.hdkeys, 'default', network);
+            let orderScript = P2OHPKH.startOrder(order, wallet.scripts, wallet.hdkeys, 'default', network);
             
+            let tx = new bsv.Tx();
+            tx.addTxOut(new bsv.Bn(order.total()), orderScript);
             tx = wallet.fundTransaction(tx, 'default', undefined, true);
 
             if (options.outputFile) {
@@ -530,6 +560,78 @@ function makeProgram (initWallet, getWallet) {
             }
         });
 
+    program.command('order-accept <orderfile> <ordertxfile>')
+        .description('creates a tx spending the order script with vendor key')
+        .option('-o --outputFile <filename>', 'save to file location.')
+        .action (async (orderfile, ordertxfile, options, command) => {
+
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            let network = wallet.getNetwork();
+
+            let privKeyString = wallet.walletMeta.getString('vendorPrivKey');
+            
+            if (privKeyString === undefined) {
+                console.error('vendorPrivKey not defined');
+                process.exit(1);
+            }
+
+            let vendorPrivKey = network.PrivKey.fromString(privKeyString);
+
+            let orderjson = JSON.parse(fs.readFileSync(orderfile).toString());
+            let orderTxBuf = fs.readFileSync(ordertxfile);
+            let orderTx = bsv.Tx.fromBuffer(orderTxBuf);
+            let order = P2OHPKH.Order.fromJSON(orderjson);
+
+            let changeScript = P2PKH.receive(wallet.scripts, wallet.hdkeys, 'default', network);
+
+            let tx = P2OHPKH.spendOrder(order, orderTx, vendorPrivKey, undefined, changeScript, network);
+
+            if (options.outputFile) {
+                fs.writeFileSync(options.outputFile, tx.toBuffer());
+            } else {
+                process.stdout.write(tx.toBuffer());
+            }
+        });
+
+    program.command('order-cancel <orderfile> <ordertxfile>')
+        .description('creates a tx spending the order script with refund key')
+        .option('-o --outputFile <filename>', 'save to file location.')
+        .action (async (orderfile, ordertxfile, options, command) => {
+
+            let db = OpenSqliteFile(command.parent.opts().dbfile);
+            let wallet = getWallet(db);
+            let network = wallet.getNetwork();
+
+            let orderjson = JSON.parse(fs.readFileSync(orderfile).toString());
+            let orderTxBuf = fs.readFileSync(ordertxfile);
+            let orderTx = bsv.Tx.fromBuffer(orderTxBuf);
+            let order = P2OHPKH.Order.fromJSON(orderjson);
+
+            let orderHash2 = bsv.Hash.sha256Sha256(order.toBuffer());
+
+            let orderTxOut = orderTx.txOuts.find(function (txOut) {
+                return txOut.script.chunks[6].buf.compare(bsv.Hash.sha256Ripemd160(order.getOrderPubKey().toBuffer())) === 0
+                    && txOut.script.chunks[1].buf.compare(orderHash2) === 0
+            });
+
+            let scriptHash = bsv.Hash.sha256(orderTxOut.script.toBuffer());
+            let scriptInfo = wallet.scripts.getScriptByHash(scriptHash);
+            let scriptData = JSON.parse(scriptInfo.data.toString());
+
+            let hdkeyInfo = wallet.hdkeys.getHDKey(scriptData.hdkey);
+            let refundPrivKey = network.Bip32.fromBuffer(hdkeyInfo.xprv).deriveChild(scriptData.counter,true).privKey;
+
+            let changeScript = P2PKH.receive(wallet.scripts, wallet.hdkeys, 'default', network);
+
+            let tx = P2OHPKH.spendOrder(order, orderTx, undefined, refundPrivKey, changeScript, network);
+
+            if (options.outputFile) {
+                fs.writeFileSync(options.outputFile, tx.toBuffer());
+            } else {
+                process.stdout.write(tx.toBuffer());
+            }
+        });
 
 
     return program;
