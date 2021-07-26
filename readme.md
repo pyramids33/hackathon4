@@ -59,7 +59,6 @@ If the vendor spends the output, it is evidence that they saw the order and acce
 If they do not deliver on the order, thats like paying for a meal at mcdonalds 
 and never getting your food.
 
-
 Example Script:  
 ```
 <signature>
@@ -218,3 +217,6 @@ SPV Channels
 // vendor download orders into folder for processing into order system 
 > node dev/getOrdersFromVendorSPV.js ./data/vendorspv/
 ```
+Shipping Code
+- A further extension to this could involve the customer organising a shipping code with the shipping company before placing the order.
+  This shipping code could be incorporated into the script, so that the vendor cannot spend the output without shipping the item.
