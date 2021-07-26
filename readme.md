@@ -24,7 +24,7 @@ For this hackathon I continued the CLI wallet from hackathon3:
 This transaction type relates to placing an order with a vendor along with payment.  
 
 The customer creates a new order object, pays the order total to a P2OHPKH 
-script, and broadcasts the transaction.  
+script. They can either broadcast the transaction themself or let the vendor broadcast it.
 
 The script is generated from:  
 - sha256(sha256(Order))
