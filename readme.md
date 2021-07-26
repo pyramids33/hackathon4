@@ -78,6 +78,87 @@ OP_EQUALVERIFY
 OP_CHECKSIG
 ```
 
+Example Order in JSON format
+```
+{
+    "dateNum": 1627207918970,
+    "vendor": "Satoshi Burger",
+    "vendorPubKey": "03ab68c8e3abd7ef5acd9a357a4abeb5bb5475137489f369e9e9a917942e2911b0",
+    "destination": "21 Bitcoin Street",
+    "nonceBuf": "71a52b2ba9b0318b7ec91ba42cea0d35",
+    "items": [{
+        "itemCode": "ac65", 
+        "description": "large 'frozen' coke",
+        "price": 3000
+    },
+    {
+        "itemCode": "ac66", 
+        "description": "large frog leg fries",
+        "price": 3000
+    },{
+        "itemCode": "ac67", 
+        "description": "hmac and cheeseburger",
+        "price": 6000
+    },]
+}
+
+```
+
+## CLI
+
+Here are the commands available in the CLI:
+
+```
+Usage: alien [options] [command]
+
+Options:
+  -V, --version                                     output the version number
+  -w --dbfile <dbfile>                              wallet database file (default: "./wallet.db")
+  -h, --help                                        display help for command
+
+Commands:
+  init [options]                                    create a new wallet file
+  balance [options]                                 show balance
+  show-chaintips                                    show the chaintip(s)
+  sync-headers [options]                            download block headers
+  show-keys                                         show hdkeys
+  add-key <name> <xprv>                             add a hdkey
+  tx [options]                                      process a transaction
+  download-tx <txid>                                download tx from whats on chain
+  receive [options]                                 generate a p2pkh address to receive funds
+  send [options] <amount> <pubKeyHash>              create a tx sending amount to address (p2pkh)
+  spend-all [options] <pubKeyHash>                  create a tx sending all spendable to address (p2pkh)
+  add-mapi <name> <pubkey> <endpoint>               add a mapi endpoint
+  show-mapi [options]                               show mapi endpoints
+  get-fee-quote [options] <miner>                   get fee quote from mapi
+  set-mapi-spvchannel <url> <token>                 set callback url for merkle proofs
+  show-mapi-spvchannel                              show callback url for merkle proofs
+  set-mapi-spvtoken <name> <token>                  set miners token to use when sending merkle proof callbacks
+  check-mapi-spvchannel                             check spv channel for merkle proof
+  submit-tx <miner> <txfilename>                    submit tx via mapi
+  set-vendor-key <privkey>                          set the vendor private key for receiving orders
+  show-vendor-key                                   set the vendor private key for receiving orders
+  order-start [options] <orderfile>                 create a tx paying the order in orderfile
+  order-accept [options] <orderfile> <ordertxfile>  creates a tx spending the order script with vendor key
+  order-cancel [options] <orderfile> <ordertxfile>  creates a tx spending the order script with refund key
+```
+
+Example Usage  
+```
+// create a tx sending money
+alien send 1000 1234pubkKeyHash > tx1_send.bin
+
+// analyse the tx to check its what you expected (optional)
+alien tx -a -f tx1_send.bin
+
+// submit the transaction
+alien submit-tx taal tx1_send.bin
+
+// if successfully broadcast, process the transaction
+alien tx -p -f tx1_send.bin
+
+```
+
 ## Improvements  
 
 There are many improvements that can be made to the wallet.  
