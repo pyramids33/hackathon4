@@ -108,6 +108,16 @@ Example Order in JSON format
 
 ```
 
+Example Txids
+```
+// Customer confirms order
+40d763df15d417e27a80aa4a7b14eebc8d20d1ac5c487977f7ff260303ad2eda
+
+// Vendor accepts order
+ddf1e54b13d67c6ab27a305192de2556a018c291e2e89da4320d3a333092d0eb
+
+```
+
 ## CLI
 
 Here are the commands available in the CLI:
