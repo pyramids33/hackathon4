@@ -99,7 +99,7 @@ Example Order in JSON format
         "itemCode": "ac67", 
         "description": "hmac and cheeseburger",
         "price": 6000
-    },]
+    }]
 }
 
 ```
