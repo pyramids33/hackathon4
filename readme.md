@@ -2,7 +2,8 @@
 
 # Alien Wallet
 ## BSV Hackathon 2021  
-  
+### Tim Middleton
+
 For this hackathon I continued the CLI wallet from hackathon3:  
   
 - Rewrite/Refactored most of the code
