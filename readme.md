@@ -19,8 +19,8 @@ For this hackathon I continued the CLI wallet from hackathon3:
     - Uses the 'Extended Addressing' concept from Bitcoin Class
     - Customer and Vendor communicate over SPV Channels
 
-P2OHPKH - Shopping with BSV
-This transaction type relates to placing an order with a vendor along with payment.
+P2OHPKH - Shopping with BSV  
+This transaction type relates to placing an order with a vendor along with payment.  
 
 The customer creates a new order object, pays the order total to a P2OHPKH 
 script, and broadcasts the transaction.
