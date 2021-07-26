@@ -6,6 +6,8 @@
 *by Tim Middleton*
 
 Demo Video: https://vimeo.com/579287608
+Hackathon Entry: https://devpost.com/software/alienwallet
+
 
 For this hackathon I continued the CLI wallet from hackathon3:  
   
