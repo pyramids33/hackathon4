@@ -1,7 +1,7 @@
 
 
-Alien Wallet
-bsv Hackathon 2021
+# Alien Wallet
+## bsv Hackathon 2021
 
 For this hackathon I continued the CLI wallet from hackathon3:
 
@@ -56,26 +56,26 @@ and never getting your food.
 Example Script:
 
 ```
-    <signature>
-    <pubkey>
-    <orderSha256>
-    ---
-    OP_SHA256
-    <orderDoubleSha256>
-    OP_EQUALVERIFY
-    OP_DUP
-    OP_DUP
-    OP_HASH160
-    <orderPKH>
-    OP_EQUAL
-    OP_SWAP
-    OP_HASH160
-    <refundPKH>
-    OP_EQUAL
-    OP_BOOLOR
-    OP_TRUE
-    OP_EQUALVERIFY
-    OP_CHECKSIG
+<signature>
+<pubkey>
+<orderSha256>
+---
+OP_SHA256
+<orderDoubleSha256>
+OP_EQUALVERIFY
+OP_DUP
+OP_DUP
+OP_HASH160
+<orderPKH>
+OP_EQUAL
+OP_SWAP
+OP_HASH160
+<refundPKH>
+OP_EQUAL
+OP_BOOLOR
+OP_TRUE
+OP_EQUALVERIFY
+OP_CHECKSIG
 ```
 
 Improvements
